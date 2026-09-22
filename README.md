@@ -29,7 +29,7 @@ This plugin targets the AlliedModders fork of SteamWorks (https://github.com/all
 
 The fork's published `v1.2.163` binary requests `SteamClient023`, but the CS:GO dedicated server's bundled `bin/steamclient.so` only exposes up to `SteamClient020`, so the release build never attaches to Steam (`SteamWorks_IsLoaded` returns false and every HTTP native fails). `ISteamClient::GetISteamHTTP` also sits at a different vtable slot in `SteamClient020`, so a plain name fallback is not enough.
 
-Use the BadServersNet build from https://github.com/BadServersNet/sm-steamworks/releases instead. It falls back through older `SteamClient` versions (or a `SteamClientInterfaceVersion` gamedata key), fetches `ISteamHTTP` through the version-stable `GetISteamGenericInterface`, and falls back to `SteamUtils010`. Install the SourceMod 1.12 Linux package's `addons/sourcemod/extensions/SteamWorks.ext.so` and restart the server. `include/SteamWorks.inc` in this repository is the fork's include.
+Use the BadServersNet build from https://github.com/BadServersNet/sm-steamworks/releases (v1.2.168 or later) instead. It falls back through older `SteamClient` versions (or a `SteamClientInterfaceVersion` gamedata key), fetches `ISteamHTTP` through the version-stable `GetISteamGenericInterface`, and falls back to `SteamUtils010`. Install the SourceMod 1.12 Linux package's `addons/sourcemod/extensions/SteamWorks.ext.so` and restart the server. `include/SteamWorks.inc` in this repository is the fork's include.
 
 ## Test results
 
