@@ -1,0 +1,4 @@
+/plugins/
+/build/
+/releases/
+/*.tar.gz

@@ -1,0 +1,62 @@
+name: Build and release
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  sourcemod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download SourceMod 1.12.0.7253
+        run: |
+          curl -fsSL https://sm.alliedmods.net/smdrop/1.12/sourcemod-1.12.0-git7253-linux.tar.gz -o "$RUNNER_TEMP/sourcemod.tar.gz"
+          echo "6bbcab989cda0ada83600d0dcb0f46affd16529b2b02ed2dba1b5baeaf02fdb4  $RUNNER_TEMP/sourcemod.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/sourcemod"
+          tar -xzf "$RUNNER_TEMP/sourcemod.tar.gz" -C "$RUNNER_TEMP/sourcemod"
+      - name: Compile with warnings as errors
+        env:
+          SOURCEMOD_SCRIPTING_DIR: ${{ runner.temp }}/sourcemod/addons/sourcemod/scripting
+        run: |
+          mkdir -p plugins
+          "$SOURCEMOD_SCRIPTING_DIR/spcomp64" steamworks-stream-test.sp "-i$SOURCEMOD_SCRIPTING_DIR/include" -iinclude -oplugins/steamworks-stream-test.smx --warnings-as-errors
+      - uses: actions/upload-artifact@v4
+        with:
+          name: steamworks-stream-test-sm12
+          path: plugins/steamworks-stream-test.smx
+      - name: Package release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p build/addons/sourcemod/plugins build/addons/sourcemod/scripting
+          cp plugins/steamworks-stream-test.smx build/addons/sourcemod/plugins/
+          cp steamworks-stream-test.sp build/addons/sourcemod/scripting/
+          if [ -d include ]; then cp -R include build/addons/sourcemod/scripting/; fi
+          cp README.md build/
+          tar -C build -czf "steamworks-stream-test-${GITHUB_REF_NAME}.tar.gz" .
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: release-package
+          path: steamworks-stream-test-*.tar.gz
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: sourcemod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-package
+          path: release
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" release/*.tar.gz --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
