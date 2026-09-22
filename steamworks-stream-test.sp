@@ -9,7 +9,7 @@ public Plugin myinfo =
     name = "SteamWorks Stream Test",
     description = "Tests the SteamWorks streaming HTTP download API",
     author = "BadServers.net",
-    version = "0.3.0",
+    version = "0.4.0",
     url = "https://badservers.net"
 };
 
@@ -18,7 +18,7 @@ public Plugin myinfo =
 #define CHUNK_BUFFER_SIZE 1048576
 #define PACK_BUFFER_SIZE 262144
 #define BYTES_PER_MIB 1048576.0
-#define STATUS_INTERVAL 0.5
+#define STATUS_INTERVAL 1.0
 #define NETWORK_TIMEOUT_SECONDS 60
 
 ConVar g_cvUrl;
@@ -33,6 +33,7 @@ int g_iChunkCount;
 int g_iLastChunkSize;
 float g_fStartTime;
 bool g_bCompleted;
+int g_iRequesterUserId;
 char g_sPhase[64];
 
 public void OnPluginStart()
@@ -94,11 +95,10 @@ public Action Command_StreamTest(int client, int args)
     }
 
     strcopy(g_sPhase, sizeof(g_sPhase), "Request sent, waiting for headers");
+    g_iRequesterUserId = GetRequesterUserId(client);
     g_hStatusTimer = CreateTimer(STATUS_INTERVAL, Timer_ShowStatus, _, TIMER_REPEAT);
 
-    ReplyToCommand(client, "[StreamTest] Streaming download started: %s", url);
-    LogMessage("[StreamTest] Streaming download started: %s -> %s", url, outputPath);
-    ShowStatus();
+    Report("Streaming download started: %s -> %s", url, outputPath);
 
     return Plugin_Handled;
 }
@@ -112,8 +112,7 @@ public Action Command_StreamTestCancel(int client, int args)
     }
 
     CleanupDownload();
-    PrintHintTextToAll("<font color='#ff4040'>StreamTest cancelled</font>");
-    ReplyToCommand(client, "[StreamTest] Download cancelled.");
+    Report("Download cancelled.");
 
     return Plugin_Handled;
 }
@@ -133,6 +132,34 @@ public Action Command_StreamTestDiag(int client, int args)
     ReplyToCommand(client, "[StreamTest] loaded=%d connected=%d publicIp=%d (%d.%d.%d.%d) httpRequestCreated=%d", loaded, connected, hasIp, ip[0], ip[1], ip[2], ip[3], created);
 
     return Plugin_Handled;
+}
+
+int GetRequesterUserId(int client)
+{
+    if (client == 0)
+    {
+        return 0;
+    }
+
+    return GetClientUserId(client);
+}
+
+void Report(const char[] format, any ...)
+{
+    char message[512];
+    VFormat(message, sizeof(message), format, 2);
+
+    PrintToServer("[StreamTest] %s", message);
+    LogMessage("[StreamTest] %s", message);
+
+    int client = GetClientOfUserId(g_iRequesterUserId);
+
+    if (client == 0)
+    {
+        return;
+    }
+
+    PrintToConsole(client, "[StreamTest] %s", message);
 }
 
 void ResolveUrl(int args, char[] url, int maxlength)
@@ -160,14 +187,13 @@ public void OnHeadersReceived(Handle request, bool failure)
 {
     if (g_bCompleted)
     {
-        LogMessage("[StreamTest] Headers callback arrived after completion (failure=%d). Ignoring.", failure);
+        Report("Headers callback arrived after completion (failure=%d). Ignoring.", failure);
         return;
     }
 
     if (failure)
     {
         strcopy(g_sPhase, sizeof(g_sPhase), "Header callback reported failure");
-        ShowStatus();
         return;
     }
 
@@ -182,22 +208,20 @@ public void OnHeadersReceived(Handle request, bool failure)
     float contentMiB = ToMiB(g_iContentLength);
 
     strcopy(g_sPhase, sizeof(g_sPhase), "Headers received, streaming body");
-    LogMessage("[StreamTest] Headers received. Content-Length: %d (%.2f MiB)", g_iContentLength, contentMiB);
-    ShowStatus();
+    Report("Headers received. Content-Length: %d (%.2f MiB)", g_iContentLength, contentMiB);
 }
 
 public void OnDataReceived(Handle request, bool failure, int offset, int bytesReceived)
 {
     if (g_bCompleted)
     {
-        LogMessage("[StreamTest] Data callback arrived after completion (failure=%d offset=%d bytes=%d). Ignoring.", failure, offset, bytesReceived);
+        Report("Data callback arrived after completion (failure=%d offset=%d bytes=%d). Ignoring.", failure, offset, bytesReceived);
         return;
     }
 
     if (failure)
     {
         strcopy(g_sPhase, sizeof(g_sPhase), "Data callback reported failure");
-        ShowStatus();
         return;
     }
 
@@ -213,7 +237,6 @@ public void OnDataReceived(Handle request, bool failure, int offset, int bytesRe
     g_iLastChunkSize = bytesReceived;
 
     strcopy(g_sPhase, sizeof(g_sPhase), "Streaming body to disk");
-    ShowStatus();
 }
 
 void WriteChunkToFile(Handle request, int chunkOffset, int chunkSize)
@@ -291,8 +314,7 @@ public void OnRequestCompleted(Handle request, bool failure, bool requestSuccess
         char timedOutLabel[8];
         YesNo(timedOut, timedOutLabel, sizeof(timedOutLabel));
 
-        LogError("[StreamTest] Download failed. failure=%d successful=%d status=%d timedOut=%d received=%d chunks=%d elapsed=%.2fs", failure, requestSuccessful, statusCode, timedOut, g_iBytesReceived, g_iChunkCount, elapsed);
-        PrintHintTextToAll("<font color='#ff4040'>StreamTest FAILED</font><br>HTTP status: %d<br>Timed out: %s<br>Received: %.2f MiB in %d chunks<br>Time: %.1fs", statusCode, timedOutLabel, receivedMiB, g_iChunkCount, elapsed);
+        Report("Download FAILED. HTTP status: %d, timed out: %s, received %.2f MiB in %d chunks, time %.1fs (failure=%d successful=%d)", statusCode, timedOutLabel, receivedMiB, g_iChunkCount, elapsed, failure, requestSuccessful);
         return;
     }
 
@@ -305,8 +327,7 @@ public void OnRequestCompleted(Handle request, bool failure, bool requestSuccess
     char fileMatchLabel[8];
     YesNo(fileMatches, fileMatchLabel, sizeof(fileMatchLabel));
 
-    LogMessage("[StreamTest] Download complete. status=%d received=%d contentLength=%d fileSize=%d chunks=%d elapsed=%.2fs speed=%.2fMB/s", statusCode, g_iBytesReceived, g_iContentLength, fileSize, g_iChunkCount, elapsed, speed);
-    PrintHintTextToAll("<font color='#40ff40'>StreamTest COMPLETE</font><br>HTTP status: %d<br>Received: %.2f / %.2f MiB in %d chunks<br>File on disk: %d bytes (match: %s)<br>Matches Content-Length: %s<br>Time: %.1fs (%.2f MB/s)", statusCode, receivedMiB, contentMiB, g_iChunkCount, fileSize, fileMatchLabel, sizeMatchLabel, elapsed, speed);
+    Report("Download COMPLETE. HTTP status: %d, received %.2f / %.2f MiB in %d chunks, file on disk %d bytes (match: %s), matches Content-Length: %s, time %.1fs (%.2f MB/s)", statusCode, receivedMiB, contentMiB, g_iChunkCount, fileSize, fileMatchLabel, sizeMatchLabel, elapsed, speed);
 }
 
 void YesNo(bool value, char[] buffer, int maxlength)
@@ -371,7 +392,19 @@ void ShowStatus()
     char sizeLine[96];
     FormatSizeLine(receivedMiB, sizeLine, sizeof(sizeLine));
 
-    PrintHintTextToAll("<font color='#ffd700'>StreamTest</font> <font color='#a0a0a0'>%s</font><br>%s<br>Chunks: %d (last %d bytes)<br>Steam progress: %.1f%%<br>Time: %.1fs (%.2f MB/s)", g_sPhase, sizeLine, g_iChunkCount, g_iLastChunkSize, steamPercent, elapsed, speed);
+    char message[256];
+    Format(message, sizeof(message), "%s | %s | chunks %d (last %d bytes) | steam %.1f%% | %.1fs (%.2f MB/s)", g_sPhase, sizeLine, g_iChunkCount, g_iLastChunkSize, steamPercent, elapsed, speed);
+
+    PrintToServer("[StreamTest] %s", message);
+
+    int client = GetClientOfUserId(g_iRequesterUserId);
+
+    if (client == 0)
+    {
+        return;
+    }
+
+    PrintToConsole(client, "[StreamTest] %s", message);
 }
 
 void FormatSizeLine(float receivedMiB, char[] buffer, int maxlength)

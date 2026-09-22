@@ -4,7 +4,7 @@ Test plugin for the SteamWorks streaming HTTP download API. Not intended for pro
 
 ## How it works
 
-`sm_streamtest [url]` creates a GET request, registers completed, headers, and data callbacks, and sends it with `SteamWorks_SendHTTPRequestAndStreamResponse`. Each data callback reads the chunk with `SteamWorks_GetHTTPStreamingResponseBodyData` and appends it to `addons/sourcemod/data/steamworks-stream-test.bin`. Progress is shown to everyone with HTML hint text every half second and on every chunk. On completion the hint text reports the HTTP status, bytes received, chunk count, on-disk file size, whether it matches `Content-Length`, and throughput.
+`sm_streamtest [url]` creates a GET request, registers completed, headers, and data callbacks, and sends it with `SteamWorks_SendHTTPRequestAndStreamResponse`. Each data callback reads the chunk with `SteamWorks_GetHTTPStreamingResponseBodyData` and appends it to `addons/sourcemod/data/steamworks-stream-test.bin`. Progress is printed once per second to the server console and to the console of the client that ran the command. On completion it reports the HTTP status, bytes received, chunk count, on-disk file size, whether it matches `Content-Length`, and throughput.
 
 ## Commands
 
